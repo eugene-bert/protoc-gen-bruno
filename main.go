@@ -24,16 +24,27 @@ var (
 	mode = modeAll
 )
 
+type environmentConfig struct {
+	name     string
+	httpURL  string
+	grpcURL  string
+}
+
 func main() {
 	var flags flag.FlagSet
 	var protoFiles []*protogen.File
 	var modeFlag string
 	var singleCollectionFlag string
 	var collectionNameFlag string
+	var devURL, stgURL, prdURL, localURL string
 
 	flags.StringVar(&modeFlag, "mode", "all", "Generation mode: all, http, or grpc")
 	flags.StringVar(&singleCollectionFlag, "single_collection", "true", "Generate a single collection for all modules")
 	flags.StringVar(&collectionNameFlag, "collection_name", "", "Custom collection name (defaults to auto-generated from services)")
+	flags.StringVar(&devURL, "dev_url", "", "Development environment base URL (e.g., https://api.dev.example.com/service)")
+	flags.StringVar(&stgURL, "stg_url", "", "Staging environment base URL")
+	flags.StringVar(&prdURL, "prd_url", "", "Production environment base URL")
+	flags.StringVar(&localURL, "local_url", "", "Local environment base URL (defaults to http://localhost:8080)")
 
 	protogen.Options{
 		ParamFunc: flags.Set,
@@ -49,6 +60,44 @@ func main() {
 		}
 
 		singleCollection := singleCollectionFlag != "false"
+
+		// Build environment configurations
+		var environments []environmentConfig
+		if localURL != "" || (devURL == "" && stgURL == "" && prdURL == "") {
+			// Add Local environment (default or custom)
+			baseURL := "http://localhost:8080"
+			grpcURL := "localhost:50051"
+			if localURL != "" {
+				baseURL = localURL
+				grpcURL = urlToGrpcHost(localURL)
+			}
+			environments = append(environments, environmentConfig{
+				name:    "Local",
+				httpURL: baseURL,
+				grpcURL: grpcURL,
+			})
+		}
+		if devURL != "" {
+			environments = append(environments, environmentConfig{
+				name:    "Development",
+				httpURL: devURL,
+				grpcURL: urlToGrpcHost(devURL),
+			})
+		}
+		if stgURL != "" {
+			environments = append(environments, environmentConfig{
+				name:    "Staging",
+				httpURL: stgURL,
+				grpcURL: urlToGrpcHost(stgURL),
+			})
+		}
+		if prdURL != "" {
+			environments = append(environments, environmentConfig{
+				name:    "Production",
+				httpURL: prdURL,
+				grpcURL: urlToGrpcHost(prdURL),
+			})
+		}
 
 		// Collect all proto files first
 		for _, f := range gen.Files {
@@ -77,7 +126,7 @@ func main() {
 
 			// Generate config once per collection
 			if len(f.Services) > 0 && !configGenerated[collectionPrefix] {
-				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag)
+				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments)
 				configGenerated[collectionPrefix] = true
 			}
 
@@ -87,11 +136,37 @@ func main() {
 	})
 }
 
-func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string) {
-	generateCollectionConfig(gen, protoFiles, prefix, customName)
+// urlToGrpcHost converts an HTTP(S) URL to a gRPC host:port
+// Examples:
+//   https://api.dev.example.com/service -> api.dev.example.com:443
+//   http://localhost:8080 -> localhost:8080
+func urlToGrpcHost(httpURL string) string {
+	// Remove protocol
+	url := strings.TrimPrefix(httpURL, "https://")
+	url = strings.TrimPrefix(url, "http://")
+
+	// Remove path if present
+	if idx := strings.Index(url, "/"); idx != -1 {
+		url = url[:idx]
+	}
+
+	// Add default port if not present
+	if !strings.Contains(url, ":") {
+		if strings.HasPrefix(httpURL, "https://") {
+			url += ":443"
+		} else {
+			url += ":80"
+		}
+	}
+
+	return url
 }
 
-func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string) {
+func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig) {
+	generateCollectionConfig(gen, protoFiles, prefix, customName, environments)
+}
+
+func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig) {
 	// Use custom name if provided, otherwise auto-generate
 	collectionName := "API Collection"
 
@@ -143,19 +218,21 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 
 	brunoConfig.P("}")
 
-	// Generate Local environment
-	localEnv := gen.NewGeneratedFile(prefix+"environments/Local.bru", "")
-	localEnv.P("vars {")
+	// Generate environment files for each configured environment
+	for _, env := range environments {
+		envFile := gen.NewGeneratedFile(prefix+"environments/"+env.name+".bru", "")
+		envFile.P("vars {")
 
-	// Add relevant environment variables based on mode
-	if mode == modeAll || mode == modeHTTP {
-		localEnv.P("  base_url: http://localhost:8080")
-	}
-	if mode == modeAll || mode == modeGRPC {
-		localEnv.P("  grpc_url: localhost:50051")
-	}
+		// Add relevant environment variables based on mode
+		if mode == modeAll || mode == modeHTTP {
+			envFile.P("  base_url: ", env.httpURL)
+		}
+		if mode == modeAll || mode == modeGRPC {
+			envFile.P("  grpc_url: ", env.grpcURL)
+		}
 
-	localEnv.P("}")
+		envFile.P("}")
+	}
 }
 
 // formatPackageName converts "example.v1" to "Example V1"

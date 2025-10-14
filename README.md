@@ -83,6 +83,50 @@ plugins:
     opt: mode=grpc
 ```
 
+### Environment Configuration
+
+Generate multiple environments (Development, Staging, Production) automatically by specifying environment URLs:
+
+```yaml
+version: v2
+plugins:
+  - local: protoc-gen-bruno
+    out: bruno/collections
+    opt:
+      - collection_name=My API
+      - dev_url=https://api.dev.example.com/service
+      - stg_url=https://api.staging.example.com/service
+      - prd_url=https://api.example.com/service
+```
+
+This generates:
+- `environments/Development.bru` - with dev URLs
+- `environments/Staging.bru` - with staging URLs
+- `environments/Production.bru` - with production URLs
+
+**Environment file example (Development.bru):**
+```
+vars {
+  base_url: https://api.dev.example.com/service
+  grpc_url: api.dev.example.com:443
+}
+```
+
+The plugin automatically:
+- Converts HTTPS URLs to gRPC host:port (e.g., `https://api.dev.example.com` → `api.dev.example.com:443`)
+- Uses port 443 for HTTPS, port 80 for HTTP
+- Strips paths from URLs for gRPC endpoints
+
+**Custom local environment:**
+```yaml
+opt:
+  - local_url=http://localhost:3000/api
+```
+
+**Default behavior:**
+- If no environment URLs specified → generates `Local` environment with `localhost:8080` and `localhost:50051`
+- If any environment URL specified → only generates those environments (no default Local)
+
 ### Multi-Module Workspaces
 
 When working with buf workspaces that have multiple modules, you may see "duplicate generated file" warnings for `bruno.json`. This happens because buf invokes the plugin once per module.
@@ -121,6 +165,10 @@ This creates subdirectories like `example_v1/`, `myapp_v2/` based on the proto p
 - **collection_name** - Custom collection name (default: auto-generated from services/package)
 - **mode** - Generation mode: `all`, `http`, or `grpc` (default: `all`)
 - **single_collection** - Combine all services in one collection: `true` or `false` (default: `true`)
+- **dev_url** - Development environment base URL (e.g., `https://api.dev.example.com/service`)
+- **stg_url** - Staging environment base URL
+- **prd_url** - Production environment base URL
+- **local_url** - Local environment base URL (default: `http://localhost:8080`)
 
 ## Generated Structure
 
@@ -128,7 +176,10 @@ This creates subdirectories like `example_v1/`, `myapp_v2/` based on the proto p
 bruno/collections/
 ├── bruno.json                    # Collection config
 ├── environments/
-│   └── Local.bru                 # Environment variables
+│   ├── Local.bru                 # Default local environment
+│   ├── Development.bru           # If dev_url specified
+│   ├── Staging.bru               # If stg_url specified
+│   └── Production.bru            # If prd_url specified
 ├── UserService/                  # HTTP requests (from google.api.http)
 │   ├── GetUser.bru
 │   ├── CreateUser.bru
@@ -227,9 +278,26 @@ body {
 
 ## Environment Variables
 
-The generator creates a `Local` environment with:
+### Using Environments in Bruno
 
-- `base_url`: `http://localhost:8080` (for HTTP requests)
-- `grpc_url`: `localhost:50051` (for gRPC requests)
+1. Open Bruno and load your generated collection
+2. Click the **environment dropdown** in the top-right corner
+3. Select the environment you want (Local, Development, Staging, Production)
+4. All `{{base_url}}` and `{{grpc_url}}` variables will be replaced with the selected environment's values
 
-You can add more environments (Dev, Staging, Prod) by creating additional `.bru` files in the `environments/` folder.
+### Generated Environments
+
+**Default (no environment URLs specified):**
+- `Local.bru` with `base_url: http://localhost:8080` and `grpc_url: localhost:50051`
+
+**With environment URLs specified:**
+- Each environment gets its own `.bru` file with appropriate URLs
+- gRPC URLs are automatically derived from HTTP URLs (HTTPS → port 443, HTTP → port 80)
+
+### Customizing Environments
+
+You can manually edit environment files in `environments/` folder to:
+- Add custom variables
+- Modify URLs
+- Add authentication tokens
+- Configure headers
