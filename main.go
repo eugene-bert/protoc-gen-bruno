@@ -290,6 +290,9 @@ func generateBrunoRequest(gen *protogen.Plugin, service *protogen.Service, metho
 		return nil
 	}
 
+	// Extract path parameters from URL (e.g., {user_id}, {name})
+	pathParams := extractPathParams(path)
+
 	filename := fmt.Sprintf("%s%s/%s.bru", prefix, service.GoName, method.GoName)
 	g := gen.NewGeneratedFile(filename, "")
 
@@ -304,19 +307,101 @@ func generateBrunoRequest(gen *protogen.Plugin, service *protogen.Service, metho
 	g.P("  url: {{base_url}}", path)
 	g.P("}")
 
+	// Determine which fields should be query params vs body
+	var queryFields []*protogen.Field
+	var bodyFields []*protogen.Field
+
+	for _, field := range method.Input.Fields {
+		fieldName := string(field.Desc.Name())
+
+		// Skip path parameters
+		if isPathParam(fieldName, pathParams) {
+			continue
+		}
+
+		// For GET/DELETE, all non-path fields become query params
+		if httpMethod == "get" || httpMethod == "delete" {
+			queryFields = append(queryFields, field)
+		} else {
+			// For POST/PUT/PATCH, check the body field
+			bodyFieldName := httpRule.Body
+			if bodyFieldName == "*" {
+				// All non-path fields go in body
+				bodyFields = append(bodyFields, field)
+			} else if bodyFieldName == fieldName {
+				// This specific field goes in body
+				bodyFields = append(bodyFields, field)
+			} else if bodyFieldName == "" {
+				// No body specified, treat like GET (query params)
+				queryFields = append(queryFields, field)
+			} else {
+				// Other fields become query params
+				queryFields = append(queryFields, field)
+			}
+		}
+	}
+
+	// Generate query parameters section
+	if len(queryFields) > 0 {
+		g.P("")
+		g.P("params:query {")
+		for _, field := range queryFields {
+			value := generateFieldValue(field, 0)
+			// Remove quotes from string values for query params
+			value = strings.Trim(value, `"`)
+			g.P("  ", field.Desc.JSONName(), ": ", value)
+		}
+		g.P("}")
+	}
+
 	// Add request body if needed
-	if httpMethod == "post" || httpMethod == "put" || httpMethod == "patch" {
+	if len(bodyFields) > 0 {
 		g.P("")
 		g.P("body:json {")
 
-		// Generate example JSON from the request message
-		exampleJSON := generateExampleJSON(method.Input, 1)
-		g.P(exampleJSON)
+		// Generate JSON for body fields only
+		if httpRule.Body == "*" {
+			// All fields in body
+			exampleJSON := generateExampleJSON(method.Input, 1)
+			g.P(exampleJSON)
+		} else {
+			// Specific field in body
+			exampleJSON := generateExampleJSON(bodyFields[0].Message, 1)
+			g.P(exampleJSON)
+		}
 
 		g.P("}")
 	}
 
 	return nil
+}
+
+// extractPathParams extracts parameter names from a URL path
+// Example: "/v1/users/{user_id}/posts/{post_id}" -> ["user_id", "post_id"]
+func extractPathParams(path string) []string {
+	var params []string
+	start := -1
+
+	for i, ch := range path {
+		if ch == '{' {
+			start = i + 1
+		} else if ch == '}' && start != -1 {
+			params = append(params, path[start:i])
+			start = -1
+		}
+	}
+
+	return params
+}
+
+// isPathParam checks if a field name matches any path parameter
+func isPathParam(fieldName string, pathParams []string) bool {
+	for _, param := range pathParams {
+		if fieldName == param {
+			return true
+		}
+	}
+	return false
 }
 
 func extractHTTPRule(rule *annotations.HttpRule) (method, path string) {

@@ -7,10 +7,12 @@ Generate Bruno API collections from Protocol Buffer definitions with gRPC-Gatewa
 - ✅ Generates Bruno HTTP requests from `google.api.http` annotations
 - ✅ Generates Bruno gRPC requests from proto service definitions
 - ✅ Auto-generates example JSON request bodies based on proto message types
+- ✅ **Auto-generates query parameters for GET/DELETE requests**
+- ✅ Smart field mapping (path params, query params, body)
 - ✅ Supports nested messages, repeated fields, enums, and all proto types
 - ✅ Configurable generation modes (HTTP only, gRPC only, or both)
 - ✅ Custom or auto-generated collection names
-- ✅ Environment configuration with variables
+- ✅ **Multi-environment support** (Dev, Staging, Production)
 - ✅ Multi-module workspace support
 
 ## Installation
@@ -206,6 +208,12 @@ service UserService {
     };
   }
 
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = {
+      get: "/v1/users"
+    };
+  }
+
   rpc CreateUser(CreateUserRequest) returns (User) {
     option (google.api.http) = {
       post: "/v1/users"
@@ -224,6 +232,16 @@ message GetUserRequest {
   string user_id = 1;
 }
 
+message ListUsersRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+
 message CreateUserRequest {
   string name = 1;
   string email = 2;
@@ -232,7 +250,7 @@ message CreateUserRequest {
 
 ## Generated Output
 
-### HTTP Request (CreateUser.bru)
+### HTTP Request with Body (CreateUser.bru)
 ```
 meta {
   name: CreateUser
@@ -251,6 +269,30 @@ body:json {
   }
 }
 ```
+
+### HTTP Request with Query Params (ListUsers.bru)
+```
+meta {
+  name: ListUsers
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/users
+}
+
+params:query {
+  pageSize: 0
+  pageToken: example_pageToken
+}
+```
+
+**How it works:**
+- **Path parameters** (like `{user_id}`) stay in the URL
+- **GET/DELETE requests**: All non-path fields become query parameters
+- **POST/PUT/PATCH with `body: "*"`**: All non-path fields go in the request body
+- **POST/PUT/PATCH with specific body field**: That field goes in body, others become query params
 
 ### gRPC Request (CreateUser.bru)
 ```
