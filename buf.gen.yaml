@@ -1,0 +1,11 @@
+version: v2
+plugins:
+  # Generate both HTTP and gRPC requests (default)
+  - local: ./protoc-gen-bruno
+    out: bruno/collections
+    # Optional configuration:
+    # opt:
+    #   - collection_name=My Awesome API  # Custom collection name
+    #   - mode=all                        # Generate both HTTP and gRPC (default)
+    #   - mode=http                       # Generate HTTP requests only
+    #   - mode=grpc                       # Generate gRPC requests only

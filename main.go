@@ -1,0 +1,367 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"strings"
+
+	"google.golang.org/genproto/googleapis/api/annotations"
+	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/pluginpb"
+)
+
+type generationMode string
+
+const (
+	modeAll  generationMode = "all"
+	modeHTTP generationMode = "http"
+	modeGRPC generationMode = "grpc"
+)
+
+var (
+	mode = modeAll
+)
+
+func main() {
+	var flags flag.FlagSet
+	var protoFiles []*protogen.File
+	var modeFlag string
+	var singleCollectionFlag string
+	var collectionNameFlag string
+
+	flags.StringVar(&modeFlag, "mode", "all", "Generation mode: all, http, or grpc")
+	flags.StringVar(&singleCollectionFlag, "single_collection", "true", "Generate a single collection for all modules")
+	flags.StringVar(&collectionNameFlag, "collection_name", "", "Custom collection name (defaults to auto-generated from services)")
+
+	protogen.Options{
+		ParamFunc: flags.Set,
+	}.Run(func(gen *protogen.Plugin) error {
+		gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
+
+		// Parse and validate mode flag
+		switch modeFlag {
+		case "all", "http", "grpc":
+			mode = generationMode(modeFlag)
+		default:
+			mode = modeAll
+		}
+
+		singleCollection := singleCollectionFlag != "false"
+
+		// Collect all proto files first
+		for _, f := range gen.Files {
+			if f.Generate {
+				protoFiles = append(protoFiles, f)
+			}
+		}
+
+		// Generate config - either once for single collection or per module
+		configGenerated := make(map[string]bool)
+
+		for _, f := range gen.Files {
+			if !f.Generate {
+				continue
+			}
+
+			// Determine collection path prefix
+			collectionPrefix := ""
+			if !singleCollection && len(f.Services) > 0 {
+				// Use package name as collection subfolder
+				pkg := string(f.Desc.Package())
+				if pkg != "" {
+					collectionPrefix = strings.ReplaceAll(pkg, ".", "_") + "/"
+				}
+			}
+
+			// Generate config once per collection
+			if len(f.Services) > 0 && !configGenerated[collectionPrefix] {
+				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag)
+				configGenerated[collectionPrefix] = true
+			}
+
+			generateBrunoCollectionWithPrefix(gen, f, collectionPrefix)
+		}
+		return nil
+	})
+}
+
+func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string) {
+	generateCollectionConfig(gen, protoFiles, prefix, customName)
+}
+
+func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string) {
+	// Use custom name if provided, otherwise auto-generate
+	collectionName := "API Collection"
+
+	if customName != "" {
+		collectionName = customName
+	} else {
+		// Build collection name from services
+		var serviceNames []string
+
+		for _, f := range protoFiles {
+			for _, service := range f.Services {
+				serviceNames = append(serviceNames, service.GoName)
+			}
+		}
+
+		if len(serviceNames) > 0 {
+			if len(serviceNames) == 1 {
+				collectionName = serviceNames[0] + " API"
+			} else {
+				// Use the package name or first service for multiple services
+				if len(protoFiles) > 0 {
+					pkg := string(protoFiles[0].Desc.Package())
+					if pkg != "" {
+						// Convert package name like "example.v1" to "Example V1 API"
+						collectionName = formatPackageName(pkg) + " API"
+					} else {
+						collectionName = strings.Join(serviceNames, " & ") + " APIs"
+					}
+				}
+			}
+		}
+	}
+
+	// Generate bruno.json with proto paths
+	brunoConfig := gen.NewGeneratedFile(prefix+"bruno.json", "")
+	brunoConfig.P("{")
+	brunoConfig.P(`  "version": "1",`)
+	brunoConfig.P(`  "name": "`, collectionName, `",`)
+	brunoConfig.P(`  "type": "collection"`)
+
+	// Only add grpc config if we're generating gRPC requests
+	if mode == modeAll || mode == modeGRPC {
+		brunoConfig.P(`  ,"grpc": {`)
+		brunoConfig.P(`    "proto": {`)
+		brunoConfig.P(`      "root": "../../proto"`)
+		brunoConfig.P(`    }`)
+		brunoConfig.P(`  }`)
+	}
+
+	brunoConfig.P("}")
+
+	// Generate Local environment
+	localEnv := gen.NewGeneratedFile(prefix+"environments/Local.bru", "")
+	localEnv.P("vars {")
+
+	// Add relevant environment variables based on mode
+	if mode == modeAll || mode == modeHTTP {
+		localEnv.P("  base_url: http://localhost:8080")
+	}
+	if mode == modeAll || mode == modeGRPC {
+		localEnv.P("  grpc_url: localhost:50051")
+	}
+
+	localEnv.P("}")
+}
+
+// formatPackageName converts "example.v1" to "Example V1"
+func formatPackageName(pkg string) string {
+	parts := strings.Split(pkg, ".")
+	for i, part := range parts {
+		// Capitalize first letter
+		if len(part) > 0 {
+			parts[i] = strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func generateBrunoCollectionWithPrefix(gen *protogen.Plugin, file *protogen.File, prefix string) error {
+	return generateBrunoCollection(gen, file, prefix)
+}
+
+func generateBrunoCollection(gen *protogen.Plugin, file *protogen.File, prefix string) error {
+	// We'll iterate through services and their methods
+	for _, service := range file.Services {
+		// For each service, create a Bruno collection folder
+		// and generate .bru files for each RPC method
+		for _, method := range service.Methods {
+			// Generate HTTP request (if mode allows and it has HTTP annotations)
+			if mode == modeAll || mode == modeHTTP {
+				if err := generateBrunoRequest(gen, service, method, prefix); err != nil {
+					return err
+				}
+			}
+			// Generate gRPC request (if mode allows)
+			if mode == modeAll || mode == modeGRPC {
+				if err := generateGrpcRequest(gen, service, method, file, prefix); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func generateBrunoRequest(gen *protogen.Plugin, service *protogen.Service, method *protogen.Method, prefix string) error {
+	// Extract HTTP annotation from method options
+	opts := method.Desc.Options()
+	if !proto.HasExtension(opts, annotations.E_Http) {
+		// Skip methods without HTTP annotations
+		return nil
+	}
+
+	httpRule := proto.GetExtension(opts, annotations.E_Http).(*annotations.HttpRule)
+
+	httpMethod, path := extractHTTPRule(httpRule)
+	if httpMethod == "" || path == "" {
+		// Skip if we can't determine HTTP method or path
+		return nil
+	}
+
+	filename := fmt.Sprintf("%s%s/%s.bru", prefix, service.GoName, method.GoName)
+	g := gen.NewGeneratedFile(filename, "")
+
+	// Generate Bruno file format
+	g.P("meta {")
+	g.P("  name: ", method.GoName)
+	g.P("  type: http")
+	g.P("  seq: 1")
+	g.P("}")
+	g.P("")
+	g.P(httpMethod, " {")
+	g.P("  url: {{base_url}}", path)
+	g.P("}")
+
+	// Add request body if needed
+	if httpMethod == "post" || httpMethod == "put" || httpMethod == "patch" {
+		g.P("")
+		g.P("body:json {")
+
+		// Generate example JSON from the request message
+		exampleJSON := generateExampleJSON(method.Input, 1)
+		g.P(exampleJSON)
+
+		g.P("}")
+	}
+
+	return nil
+}
+
+func extractHTTPRule(rule *annotations.HttpRule) (method, path string) {
+	switch pattern := rule.Pattern.(type) {
+	case *annotations.HttpRule_Get:
+		return "get", pattern.Get
+	case *annotations.HttpRule_Post:
+		return "post", pattern.Post
+	case *annotations.HttpRule_Put:
+		return "put", pattern.Put
+	case *annotations.HttpRule_Delete:
+		return "delete", pattern.Delete
+	case *annotations.HttpRule_Patch:
+		return "patch", pattern.Patch
+	}
+	return "", ""
+}
+
+func generateGrpcRequest(gen *protogen.Plugin, service *protogen.Service, method *protogen.Method, file *protogen.File, prefix string) error {
+	// Generate gRPC .bru file in a gRPC subfolder
+	filename := fmt.Sprintf("%s%s-gRPC/%s.bru", prefix, service.GoName, method.GoName)
+	g := gen.NewGeneratedFile(filename, "")
+
+	// Construct the full gRPC method name: package.Service/Method
+	grpcMethod := fmt.Sprintf("%s.%s/%s", file.Desc.Package(), service.Desc.Name(), method.Desc.Name())
+
+	// Get proto file path relative to workspace
+	protoFilePath := file.Desc.Path()
+
+	// Generate Bruno gRPC file format
+	g.P("meta {")
+	g.P("  name: ", method.GoName)
+	g.P("  type: grpc")
+	g.P("  seq: 1")
+	g.P("}")
+	g.P("")
+	g.P("grpc {")
+	g.P("  url: {{grpc_url}}")
+	g.P("  method: ", grpcMethod)
+	g.P("}")
+	g.P("")
+	g.P("metadata {")
+	g.P("}")
+	g.P("")
+	g.P("body {")
+	// Generate example JSON from the request message
+	exampleJSON := generateExampleJSON(method.Input, 1)
+	g.P(exampleJSON)
+	g.P("}")
+	g.P("")
+	g.P("script:pre-request {")
+	g.P("  // Proto file: ", protoFilePath)
+	g.P("}")
+
+	return nil
+}
+
+// generateExampleJSON creates example JSON for a proto message
+func generateExampleJSON(msg *protogen.Message, indent int) string {
+	var lines []string
+	indentStr := strings.Repeat("  ", indent)
+
+	lines = append(lines, "{")
+
+	for i, field := range msg.Fields {
+		fieldIndent := strings.Repeat("  ", indent+1)
+		jsonName := field.Desc.JSONName()
+
+		// Generate value based on field type
+		var value string
+		if field.Desc.IsList() {
+			// Handle repeated fields (arrays)
+			value = "[" + generateFieldValue(field, indent+1) + "]"
+		} else {
+			value = generateFieldValue(field, indent+1)
+		}
+
+		line := fmt.Sprintf(`%s"%s": %s`, fieldIndent, jsonName, value)
+		if i < len(msg.Fields)-1 {
+			line += ","
+		}
+		lines = append(lines, line)
+	}
+
+	lines = append(lines, indentStr+"}")
+	return strings.Join(lines, "\n")
+}
+
+// generateFieldValue generates an example value for a field
+func generateFieldValue(field *protogen.Field, indent int) string {
+	kind := field.Desc.Kind()
+
+	switch kind {
+	case protoreflect.StringKind:
+		// Use field name as example value
+		return fmt.Sprintf(`"example_%s"`, field.Desc.JSONName())
+	case protoreflect.Int32Kind, protoreflect.Int64Kind,
+		protoreflect.Uint32Kind, protoreflect.Uint64Kind,
+		protoreflect.Sint32Kind, protoreflect.Sint64Kind,
+		protoreflect.Fixed32Kind, protoreflect.Fixed64Kind,
+		protoreflect.Sfixed32Kind, protoreflect.Sfixed64Kind:
+		return "0"
+	case protoreflect.BoolKind:
+		return "false"
+	case protoreflect.FloatKind, protoreflect.DoubleKind:
+		return "0.0"
+	case protoreflect.BytesKind:
+		return `"base64_encoded_data"`
+	case protoreflect.EnumKind:
+		// Get first enum value
+		enum := field.Enum
+		if enum != nil && len(enum.Values) > 0 {
+			return fmt.Sprintf(`"%s"`, enum.Values[0].Desc.Name())
+		}
+		return `"ENUM_VALUE"`
+	case protoreflect.MessageKind:
+		// Recursively generate nested message
+		if field.Message != nil {
+			return generateExampleJSON(field.Message, indent)
+		}
+		return "{}"
+	default:
+		return `"unknown"`
+	}
+}

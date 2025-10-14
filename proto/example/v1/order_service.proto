@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package example.v1;
+
+option go_package = "github.com/buf-bruno/example/v1;examplev1";
+
+import "google/api/annotations.proto";
+
+service OrderService {
+  rpc GetOrder(GetOrderRequest) returns (Order) {
+    option (google.api.http) = {
+      get: "/v1/orders/{order_id}"
+    };
+  }
+
+  rpc CreateOrder(CreateOrderRequest) returns (Order) {
+    option (google.api.http) = {
+      post: "/v1/orders"
+      body: "*"
+    };
+  }
+}
+
+message Order {
+  string order_id = 1;
+  string user_id = 2;
+  double total = 3;
+}
+
+message GetOrderRequest {
+  string order_id = 1;
+}
+
+message CreateOrderRequest {
+  string user_id = 1;
+  repeated string item_ids = 2;
+}
