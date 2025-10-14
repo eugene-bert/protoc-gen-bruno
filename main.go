@@ -377,7 +377,10 @@ func generateBrunoRequest(gen *protogen.Plugin, service *protogen.Service, metho
 }
 
 // extractPathParams extracts parameter names from a URL path
-// Example: "/v1/users/{user_id}/posts/{post_id}" -> ["user_id", "post_id"]
+// Examples:
+//   "/v1/users/{user_id}/posts/{post_id}" -> ["user_id", "post_id"]
+//   "/v1alpha1/{name=environments/*/contact}" -> ["name"]
+//   "/v1alpha1/{parent=accounts/*}/environments" -> ["parent"]
 func extractPathParams(path string) []string {
 	var params []string
 	start := -1
@@ -386,7 +389,13 @@ func extractPathParams(path string) []string {
 		if ch == '{' {
 			start = i + 1
 		} else if ch == '}' && start != -1 {
-			params = append(params, path[start:i])
+			param := path[start:i]
+			// Handle resource patterns like {name=environments/*/contact}
+			// Extract just the parameter name before the '='
+			if idx := strings.Index(param, "="); idx != -1 {
+				param = param[:idx]
+			}
+			params = append(params, param)
 			start = -1
 		}
 	}
