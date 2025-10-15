@@ -37,6 +37,7 @@ func main() {
 	var singleCollectionFlag string
 	var collectionNameFlag string
 	var devURL, stgURL, prdURL, localURL string
+	var grpcDevURL, grpcStgURL, grpcPrdURL, grpcLocalURL string
 	var protoRootFlag string
 
 	flags.StringVar(&modeFlag, "mode", "all", "Generation mode: all, http, or grpc")
@@ -46,6 +47,10 @@ func main() {
 	flags.StringVar(&stgURL, "stg_url", "", "Staging environment base URL")
 	flags.StringVar(&prdURL, "prd_url", "", "Production environment base URL")
 	flags.StringVar(&localURL, "local_url", "", "Local environment base URL (defaults to http://localhost:8080)")
+	flags.StringVar(&grpcDevURL, "grpc_dev_url", "", "Development gRPC URL (e.g., api.dev.example.com:443) - overrides auto-generated from dev_url")
+	flags.StringVar(&grpcStgURL, "grpc_stg_url", "", "Staging gRPC URL - overrides auto-generated from stg_url")
+	flags.StringVar(&grpcPrdURL, "grpc_prd_url", "", "Production gRPC URL - overrides auto-generated from prd_url")
+	flags.StringVar(&grpcLocalURL, "grpc_local_url", "", "Local gRPC URL (e.g., localhost:50051) - overrides auto-generated from local_url")
 	flags.StringVar(&protoRootFlag, "proto_root", "../../proto", "Path to proto files root directory relative to bruno/collections (e.g., ../../api/proto/src)")
 
 	protogen.Options{
@@ -73,6 +78,10 @@ func main() {
 				baseURL = localURL
 				grpcURL = urlToGrpcHost(localURL)
 			}
+			// Override with explicit gRPC URL if provided
+			if grpcLocalURL != "" {
+				grpcURL = grpcLocalURL
+			}
 			environments = append(environments, environmentConfig{
 				name:    "Local",
 				httpURL: baseURL,
@@ -80,24 +89,39 @@ func main() {
 			})
 		}
 		if devURL != "" {
+			grpcURL := urlToGrpcHost(devURL)
+			// Override with explicit gRPC URL if provided
+			if grpcDevURL != "" {
+				grpcURL = grpcDevURL
+			}
 			environments = append(environments, environmentConfig{
 				name:    "Development",
 				httpURL: devURL,
-				grpcURL: urlToGrpcHost(devURL),
+				grpcURL: grpcURL,
 			})
 		}
 		if stgURL != "" {
+			grpcURL := urlToGrpcHost(stgURL)
+			// Override with explicit gRPC URL if provided
+			if grpcStgURL != "" {
+				grpcURL = grpcStgURL
+			}
 			environments = append(environments, environmentConfig{
 				name:    "Staging",
 				httpURL: stgURL,
-				grpcURL: urlToGrpcHost(stgURL),
+				grpcURL: grpcURL,
 			})
 		}
 		if prdURL != "" {
+			grpcURL := urlToGrpcHost(prdURL)
+			// Override with explicit gRPC URL if provided
+			if grpcPrdURL != "" {
+				grpcURL = grpcPrdURL
+			}
 			environments = append(environments, environmentConfig{
 				name:    "Production",
 				httpURL: prdURL,
-				grpcURL: urlToGrpcHost(prdURL),
+				grpcURL: grpcURL,
 			})
 		}
 

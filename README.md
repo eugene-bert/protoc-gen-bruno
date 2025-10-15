@@ -129,6 +129,33 @@ opt:
 - If no environment URLs specified → generates `Local` environment with `localhost:8080` and `localhost:50051`
 - If any environment URL specified → only generates those environments (no default Local)
 
+### Custom gRPC URLs
+
+By default, gRPC URLs are automatically derived from HTTP URLs (e.g., `https://api.dev.example.com` → `api.dev.example.com:443`). However, you can override these with explicit gRPC endpoints:
+
+```yaml
+version: v2
+plugins:
+  - local: protoc-gen-bruno
+    out: bruno/collections
+    opt:
+      - dev_url=https://api.dev.example.com/service
+      - grpc_dev_url=grpc.dev.example.com:9443  # Override auto-generated gRPC URL
+      - local_url=http://localhost:8080
+      - grpc_local_url=localhost:50051  # Custom local gRPC port
+```
+
+**When to use gRPC URL overrides:**
+- Your gRPC endpoints use different hosts than HTTP endpoints
+- Your gRPC services use non-standard ports (not 443/80)
+- You want to use gRPC-Web or other gRPC proxies
+
+**Available gRPC override options:**
+- `grpc_local_url` - Override local gRPC endpoint (e.g., `localhost:50051`)
+- `grpc_dev_url` - Override development gRPC endpoint (e.g., `grpc.dev.example.com:9443`)
+- `grpc_stg_url` - Override staging gRPC endpoint
+- `grpc_prd_url` - Override production gRPC endpoint
+
 ### Multi-Module Workspaces
 
 When working with buf workspaces that have multiple modules, you may see "duplicate generated file" warnings for `bruno.json`. This happens because buf invokes the plugin once per module.
@@ -190,6 +217,10 @@ This creates subdirectories like `example_v1/`, `myapp_v2/` based on the proto p
 - **stg_url** - Staging environment base URL
 - **prd_url** - Production environment base URL
 - **local_url** - Local environment base URL (default: `http://localhost:8080`)
+- **grpc_dev_url** - Override development gRPC endpoint (e.g., `grpc.dev.example.com:9443`)
+- **grpc_stg_url** - Override staging gRPC endpoint
+- **grpc_prd_url** - Override production gRPC endpoint
+- **grpc_local_url** - Override local gRPC endpoint (e.g., `localhost:50051`)
 
 ## Generated Structure
 
