@@ -9,3 +9,4 @@ plugins:
     #   - mode=all                        # Generate both HTTP and gRPC (default)
     #   - mode=http                       # Generate HTTP requests only
     #   - mode=grpc                       # Generate gRPC requests only
+    #   - proto_root=../../proto          # Path to proto files (default: ../../proto)

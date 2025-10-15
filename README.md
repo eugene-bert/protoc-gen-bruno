@@ -147,6 +147,24 @@ plugins:
 
 The warnings don't affect functionality - everything works fine!
 
+### Custom Proto Root Path
+
+By default, the gRPC configuration points to `../../proto` relative to `bruno/collections`. If your proto files are in a different location, you can customize this:
+
+```yaml
+version: v2
+plugins:
+  - local: protoc-gen-bruno
+    out: bruno/collections
+    opt:
+      - proto_root=../../api/proto/src  # Custom proto location
+```
+
+**Common values:**
+- `../../proto` (default) - Proto files at project root
+- `../../api/proto/src` - Proto files in api/proto/src directory
+- `../../../proto` - Proto files in parent directory
+
 ### Separate Collections Per Package
 
 By default, all services are combined into a single collection. You can generate separate collections per proto package:
@@ -167,6 +185,7 @@ This creates subdirectories like `example_v1/`, `myapp_v2/` based on the proto p
 - **collection_name** - Custom collection name (default: auto-generated from services/package)
 - **mode** - Generation mode: `all`, `http`, or `grpc` (default: `all`)
 - **single_collection** - Combine all services in one collection: `true` or `false` (default: `true`)
+- **proto_root** - Path to proto files root directory relative to `bruno/collections` (default: `../../proto`)
 - **dev_url** - Development environment base URL (e.g., `https://api.dev.example.com/service`)
 - **stg_url** - Staging environment base URL
 - **prd_url** - Production environment base URL

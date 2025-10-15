@@ -37,6 +37,7 @@ func main() {
 	var singleCollectionFlag string
 	var collectionNameFlag string
 	var devURL, stgURL, prdURL, localURL string
+	var protoRootFlag string
 
 	flags.StringVar(&modeFlag, "mode", "all", "Generation mode: all, http, or grpc")
 	flags.StringVar(&singleCollectionFlag, "single_collection", "true", "Generate a single collection for all modules")
@@ -45,6 +46,7 @@ func main() {
 	flags.StringVar(&stgURL, "stg_url", "", "Staging environment base URL")
 	flags.StringVar(&prdURL, "prd_url", "", "Production environment base URL")
 	flags.StringVar(&localURL, "local_url", "", "Local environment base URL (defaults to http://localhost:8080)")
+	flags.StringVar(&protoRootFlag, "proto_root", "../../proto", "Path to proto files root directory relative to bruno/collections (e.g., ../../api/proto/src)")
 
 	protogen.Options{
 		ParamFunc: flags.Set,
@@ -126,7 +128,7 @@ func main() {
 
 			// Generate config once per collection
 			if len(f.Services) > 0 && !configGenerated[collectionPrefix] {
-				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments)
+				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments, protoRootFlag)
 				configGenerated[collectionPrefix] = true
 			}
 
@@ -162,11 +164,11 @@ func urlToGrpcHost(httpURL string) string {
 	return url
 }
 
-func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig) {
-	generateCollectionConfig(gen, protoFiles, prefix, customName, environments)
+func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string) {
+	generateCollectionConfig(gen, protoFiles, prefix, customName, environments, protoRoot)
 }
 
-func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig) {
+func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string) {
 	// Use custom name if provided, otherwise auto-generate
 	collectionName := "API Collection"
 
@@ -211,7 +213,7 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 		brunoConfig.P(`  "type": "collection",`)
 		brunoConfig.P(`  "grpc": {`)
 		brunoConfig.P(`    "proto": {`)
-		brunoConfig.P(`      "root": "../../proto"`)
+		brunoConfig.P(`      "root": "`, protoRoot, `"`)
 		brunoConfig.P(`    }`)
 		brunoConfig.P(`  }`)
 	} else {
