@@ -589,9 +589,31 @@ func generateFieldValue(field *protogen.Field, indent int) string {
 		}
 		return `"ENUM_VALUE"`
 	case protoreflect.MessageKind:
-		// Recursively generate nested message
+		// Handle well-known types with special JSON representations
 		if field.Message != nil {
-			return generateExampleJSON(field.Message, indent)
+			// Check for well-known types that have special JSON serialization
+			fullName := string(field.Message.Desc.FullName())
+			switch fullName {
+			case "google.protobuf.Timestamp":
+				return `"2024-01-01T00:00:00Z"`
+			case "google.protobuf.Duration":
+				return `"1.5s"`
+			case "google.protobuf.Any":
+				return `{"@type": "type.googleapis.com/example.Type", "value": "..."}`
+			case "google.protobuf.FieldMask":
+				return `"field1,field2.subfield"`
+			case "google.protobuf.Struct":
+				return `{}`
+			case "google.protobuf.Value":
+				return `null`
+			case "google.protobuf.ListValue":
+				return `[]`
+			case "google.protobuf.Empty":
+				return `{}`
+			default:
+				// For other message types, recursively generate JSON
+				return generateExampleJSON(field.Message, indent)
+			}
 		}
 		return "{}"
 	default:
