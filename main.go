@@ -497,7 +497,15 @@ func generateGrpcRequest(gen *protogen.Plugin, service *protogen.Service, method
 }
 
 // generateExampleJSON creates example JSON for a proto message
+// Maximum nesting depth to prevent infinite recursion
+const maxDepth = 3
+
 func generateExampleJSON(msg *protogen.Message, indent int) string {
+	// Prevent infinite recursion by limiting depth
+	if indent > maxDepth {
+		return "{}"
+	}
+
 	var lines []string
 	indentStr := strings.Repeat("  ", indent)
 
