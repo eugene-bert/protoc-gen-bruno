@@ -249,7 +249,7 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 
 	// Generate environment files for each configured environment
 	for _, env := range environments {
-		envFile := gen.NewGeneratedFile(prefix+"_environments/"+env.name+".bru", "")
+		envFile := gen.NewGeneratedFile(prefix+"environments/"+env.name+".bru", "")
 		envFile.P("vars {")
 
 		// Add relevant environment variables based on mode
@@ -274,6 +274,15 @@ func formatPackageName(pkg string) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// getServiceFolderName returns the folder name for a service, avoiding conflicts with reserved directories
+func getServiceFolderName(serviceName string) string {
+	// Check if service name conflicts with "environments" (case-insensitive)
+	if strings.ToLower(serviceName) == "environments" {
+		return serviceName + "Service"
+	}
+	return serviceName
 }
 
 func generateBrunoCollectionWithPrefix(gen *protogen.Plugin, file *protogen.File, prefix string) error {
@@ -322,7 +331,8 @@ func generateBrunoRequest(gen *protogen.Plugin, service *protogen.Service, metho
 	// Extract path parameters from URL (e.g., {user_id}, {name})
 	pathParams := extractPathParams(path)
 
-	filename := fmt.Sprintf("%s%s/%s.bru", prefix, service.GoName, method.GoName)
+	serviceFolderName := getServiceFolderName(service.GoName)
+	filename := fmt.Sprintf("%s%s/%s.bru", prefix, serviceFolderName, method.GoName)
 	g := gen.NewGeneratedFile(filename, "")
 
 	// Generate Bruno file format
@@ -461,7 +471,8 @@ func extractHTTPRule(rule *annotations.HttpRule) (method, path string) {
 
 func generateGrpcRequest(gen *protogen.Plugin, service *protogen.Service, method *protogen.Method, file *protogen.File, prefix string) error {
 	// Generate gRPC .bru file in a gRPC subfolder
-	filename := fmt.Sprintf("%s%s-gRPC/%s.bru", prefix, service.GoName, method.GoName)
+	serviceFolderName := getServiceFolderName(service.GoName)
+	filename := fmt.Sprintf("%s%s-gRPC/%s.bru", prefix, serviceFolderName, method.GoName)
 	g := gen.NewGeneratedFile(filename, "")
 
 	// Construct the full gRPC method name: package.Service/Method
