@@ -249,7 +249,7 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 
 	// Generate environment files for each configured environment
 	for _, env := range environments {
-		envFile := gen.NewGeneratedFile(prefix+"environments/"+env.name+".bru", "")
+		envFile := gen.NewGeneratedFile(prefix+"_environments/"+env.name+".bru", "")
 		envFile.P("vars {")
 
 		// Add relevant environment variables based on mode
