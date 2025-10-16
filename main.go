@@ -135,16 +135,6 @@ func main() {
 		// Generate config - either once for single collection or per module
 		configGenerated := make(map[string]bool)
 
-		// Only generate shared files (bruno.json, environments) if we have services to generate
-		// Check if we have any files with services
-		hasServicesToGenerate := false
-		for _, f := range gen.Files {
-			if f.Generate && len(f.Services) > 0 {
-				hasServicesToGenerate = true
-				break
-			}
-		}
-
 		for _, f := range gen.Files {
 			if !f.Generate {
 				continue
@@ -161,23 +151,9 @@ func main() {
 			}
 
 			// Generate config once per collection
-			// Only generate if this is the first file with services (to avoid duplicates across buf invocations)
-			if len(f.Services) > 0 && !configGenerated[collectionPrefix] && hasServicesToGenerate {
-				// Check if this is likely the first invocation by checking if we're generating
-				// the lexicographically first file with services (buf processes files in order)
-				isFirstFile := true
-				for _, otherF := range gen.Files {
-					if otherF.Generate && len(otherF.Services) > 0 &&
-						otherF.Desc.Path() < f.Desc.Path() {
-						isFirstFile = false
-						break
-					}
-				}
-
-				if isFirstFile {
-					generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments, protoRootFlag)
-					configGenerated[collectionPrefix] = true
-				}
+			if len(f.Services) > 0 && !configGenerated[collectionPrefix] {
+				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments, protoRootFlag)
+				configGenerated[collectionPrefix] = true
 			}
 
 			generateBrunoCollectionWithPrefix(gen, f, collectionPrefix)
