@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	"google.golang.org/genproto/googleapis/api/annotations"
@@ -39,6 +40,8 @@ func main() {
 	var devURL, stgURL, prdURL, localURL string
 	var grpcDevURL, grpcStgURL, grpcPrdURL, grpcLocalURL string
 	var protoRootFlag string
+	var preRequestScriptPath string
+	var postRequestScriptPath string
 
 	flags.StringVar(&modeFlag, "mode", "all", "Generation mode: all, http, or grpc")
 	flags.StringVar(&singleCollectionFlag, "single_collection", "true", "Generate a single collection for all modules")
@@ -52,6 +55,8 @@ func main() {
 	flags.StringVar(&grpcPrdURL, "grpc_prd_url", "", "Production gRPC URL - overrides auto-generated from prd_url")
 	flags.StringVar(&grpcLocalURL, "grpc_local_url", "", "Local gRPC URL (e.g., localhost:50051) - overrides auto-generated from local_url")
 	flags.StringVar(&protoRootFlag, "proto_root", "../../proto", "Path to proto files root directory relative to bruno/collections (e.g., ../../api/proto/src)")
+	flags.StringVar(&preRequestScriptPath, "pre_request_script", "", "Path to JavaScript file containing collection-level pre-request script")
+	flags.StringVar(&postRequestScriptPath, "post_request_script", "", "Path to JavaScript file containing collection-level post-request script")
 
 	protogen.Options{
 		ParamFunc: flags.Set,
@@ -152,7 +157,7 @@ func main() {
 
 			// Generate config once per collection
 			if len(f.Services) > 0 && !configGenerated[collectionPrefix] {
-				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments, protoRootFlag)
+				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments, protoRootFlag, preRequestScriptPath, postRequestScriptPath)
 				configGenerated[collectionPrefix] = true
 			}
 
@@ -189,11 +194,11 @@ func urlToGrpcHost(httpURL string) string {
 	return url
 }
 
-func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string) {
-	generateCollectionConfig(gen, protoFiles, prefix, customName, environments, protoRoot)
+func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string, preRequestScriptPath string, postRequestScriptPath string) {
+	generateCollectionConfig(gen, protoFiles, prefix, customName, environments, protoRoot, preRequestScriptPath, postRequestScriptPath)
 }
 
-func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string) {
+func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string, preRequestScriptPath string, postRequestScriptPath string) {
 	// Use custom name if provided, otherwise auto-generate
 	collectionName := "API Collection"
 
@@ -227,22 +232,77 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 		}
 	}
 
+	// Read pre-request script if provided
+	var preRequestScript string
+	if preRequestScriptPath != "" {
+		scriptBytes, err := os.ReadFile(preRequestScriptPath)
+		if err != nil {
+			// If file can't be read, log warning but continue
+			gen.Error(fmt.Errorf("warning: could not read pre-request script file %s: %v", preRequestScriptPath, err))
+		} else {
+			preRequestScript = string(scriptBytes)
+		}
+	}
+
+	// Read post-request script if provided
+	var postRequestScript string
+	if postRequestScriptPath != "" {
+		scriptBytes, err := os.ReadFile(postRequestScriptPath)
+		if err != nil {
+			// If file can't be read, log warning but continue
+			gen.Error(fmt.Errorf("warning: could not read post-request script file %s: %v", postRequestScriptPath, err))
+		} else {
+			postRequestScript = string(scriptBytes)
+		}
+	}
+
 	// Generate bruno.json with proto paths
 	brunoConfig := gen.NewGeneratedFile(prefix+"bruno.json", "")
 	brunoConfig.P("{")
 	brunoConfig.P(`  "version": "1",`)
 	brunoConfig.P(`  "name": "`, collectionName, `",`)
 
-	// Add comma after "type" if we're adding grpc config
-	if mode == modeAll || mode == modeGRPC {
+	// Add comma after "type" if we're adding grpc config or scripts
+	hasScripts := preRequestScript != "" || postRequestScript != ""
+	needsComma := (mode == modeAll || mode == modeGRPC) || hasScripts
+
+	if needsComma {
 		brunoConfig.P(`  "type": "collection",`)
-		brunoConfig.P(`  "grpc": {`)
-		brunoConfig.P(`    "proto": {`)
-		brunoConfig.P(`      "root": "`, protoRoot, `"`)
-		brunoConfig.P(`    }`)
-		brunoConfig.P(`  }`)
 	} else {
 		brunoConfig.P(`  "type": "collection"`)
+	}
+
+	// Add gRPC config if needed
+	if mode == modeAll || mode == modeGRPC {
+		if hasScripts {
+			brunoConfig.P(`  "grpc": {`)
+			brunoConfig.P(`    "proto": {`)
+			brunoConfig.P(`      "root": "`, protoRoot, `"`)
+			brunoConfig.P(`    }`)
+			brunoConfig.P(`  },`)
+		} else {
+			brunoConfig.P(`  "grpc": {`)
+			brunoConfig.P(`    "proto": {`)
+			brunoConfig.P(`      "root": "`, protoRoot, `"`)
+			brunoConfig.P(`    }`)
+			brunoConfig.P(`  }`)
+		}
+	}
+
+	// Add scripts if provided
+	if hasScripts {
+		brunoConfig.P(`  "scripts": {`)
+		if preRequestScript != "" {
+			if postRequestScript != "" {
+				brunoConfig.P(`    "prerequest": `, escapeJSONString(preRequestScript), `,`)
+			} else {
+				brunoConfig.P(`    "prerequest": `, escapeJSONString(preRequestScript))
+			}
+		}
+		if postRequestScript != "" {
+			brunoConfig.P(`    "postrequest": `, escapeJSONString(postRequestScript))
+		}
+		brunoConfig.P(`  }`)
 	}
 
 	brunoConfig.P("}")
@@ -283,6 +343,31 @@ func getServiceFolderName(serviceName string) string {
 		return serviceName + "Service"
 	}
 	return serviceName
+}
+
+// escapeJSONString properly escapes a string for inclusion in JSON
+func escapeJSONString(s string) string {
+	// Use strings.Builder for efficient string concatenation
+	var b strings.Builder
+	b.WriteString(`"`)
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteString(`"`)
+	return b.String()
 }
 
 func generateBrunoCollectionWithPrefix(gen *protogen.Plugin, file *protogen.File, prefix string) error {

@@ -207,12 +207,70 @@ plugins:
 
 This creates subdirectories like `example_v1/`, `myapp_v2/` based on the proto package names.
 
+### Pre-Request and Post-Request Scripts
+
+Add collection-level scripts that run before or after every request by pointing to JavaScript files:
+
+```yaml
+version: v2
+plugins:
+  - local: protoc-gen-bruno
+    out: bruno/collections
+    opt:
+      - pre_request_script=scripts/bruno/auth.js
+      - post_request_script=scripts/bruno/logging.js
+```
+
+**Example pre-request script (`scripts/bruno/auth.js`):**
+```javascript
+// Fetch bearer token from auth server
+const res = await req({
+  url: bru.getEnvVar("auth_server_url") || "http://localhost:1234",
+  method: "GET"
+});
+
+// Set the bearer token for all requests
+if (res && res.body && res.body.token) {
+  bru.setVar("bearer_token", res.body.token);
+}
+```
+
+**Example post-request script (`scripts/bruno/logging.js`):**
+```javascript
+// Log response and save data for next requests
+console.log("Response status:", res.status);
+console.log("Response body:", res.body);
+
+// Save response data to collection variables
+if (res && res.body) {
+  if (res.body.id) {
+    bru.setVar("last_created_id", res.body.id);
+  }
+}
+```
+
+**Pre-request scripts** run before each request and can:
+- Fetch authentication tokens
+- Set dynamic variables
+- Make additional API calls
+- Transform request data
+
+**Post-request scripts** run after each request and can:
+- Log response data
+- Save data for subsequent requests
+- Perform assertions
+- Clean up resources
+
+**Note:** The paths are relative to where you run `buf generate` from. Both scripts are optional.
+
 ### Available Options
 
 - **collection_name** - Custom collection name (default: auto-generated from services/package)
 - **mode** - Generation mode: `all`, `http`, or `grpc` (default: `all`)
 - **single_collection** - Combine all services in one collection: `true` or `false` (default: `true`)
 - **proto_root** - Path to proto files root directory relative to `bruno/collections` (default: `../../proto`)
+- **pre_request_script** - Path to JavaScript file for collection-level pre-request script (optional)
+- **post_request_script** - Path to JavaScript file for collection-level post-request script (optional)
 - **dev_url** - Development environment base URL (e.g., `https://api.dev.example.com/service`)
 - **stg_url** - Staging environment base URL
 - **prd_url** - Production environment base URL
