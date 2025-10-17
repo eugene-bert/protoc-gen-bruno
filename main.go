@@ -262,9 +262,9 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 	brunoConfig.P(`  "version": "1",`)
 	brunoConfig.P(`  "name": "`, collectionName, `",`)
 
-	// Add comma after "type" if we're adding grpc config or scripts
+	// Add comma after "type" if we're adding protobuf config
 	hasScripts := preRequestScript != "" || postRequestScript != ""
-	needsComma := (mode == modeAll || mode == modeGRPC) || hasScripts
+	needsComma := (mode == modeAll || mode == modeGRPC)
 
 	if needsComma {
 		brunoConfig.P(`  "type": "collection",`)
@@ -274,38 +274,34 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 
 	// Add protobuf config if needed (for gRPC support)
 	if mode == modeAll || mode == modeGRPC {
-		if hasScripts {
-			brunoConfig.P(`  "protobuf": {`)
-			brunoConfig.P(`    "proto": {`)
-			brunoConfig.P(`      "root": "`, protoRoot, `"`)
-			brunoConfig.P(`    }`)
-			brunoConfig.P(`  },`)
-		} else {
-			brunoConfig.P(`  "protobuf": {`)
-			brunoConfig.P(`    "proto": {`)
-			brunoConfig.P(`      "root": "`, protoRoot, `"`)
-			brunoConfig.P(`    }`)
-			brunoConfig.P(`  }`)
-		}
-	}
-
-	// Add scripts if provided
-	if hasScripts {
-		brunoConfig.P(`  "scripts": {`)
-		if preRequestScript != "" {
-			if postRequestScript != "" {
-				brunoConfig.P(`    "prerequest": `, escapeJSONString(preRequestScript), `,`)
-			} else {
-				brunoConfig.P(`    "prerequest": `, escapeJSONString(preRequestScript))
-			}
-		}
-		if postRequestScript != "" {
-			brunoConfig.P(`    "postrequest": `, escapeJSONString(postRequestScript))
-		}
+		brunoConfig.P(`  "protobuf": {`)
+		brunoConfig.P(`    "proto": {`)
+		brunoConfig.P(`      "root": "`, protoRoot, `"`)
+		brunoConfig.P(`    }`)
 		brunoConfig.P(`  }`)
 	}
 
 	brunoConfig.P("}")
+
+	// Generate collection.bru file if scripts are provided
+	if hasScripts {
+		collectionBru := gen.NewGeneratedFile(prefix+"collection.bru", "")
+
+		if preRequestScript != "" {
+			collectionBru.P("script:pre-request {")
+			collectionBru.P(preRequestScript)
+			collectionBru.P("}")
+			if postRequestScript != "" {
+				collectionBru.P("")
+			}
+		}
+
+		if postRequestScript != "" {
+			collectionBru.P("script:post-response {")
+			collectionBru.P(postRequestScript)
+			collectionBru.P("}")
+		}
+	}
 
 	// Generate environment files for each configured environment
 	for _, env := range environments {
@@ -343,31 +339,6 @@ func getServiceFolderName(serviceName string) string {
 		return serviceName + "Service"
 	}
 	return serviceName
-}
-
-// escapeJSONString properly escapes a string for inclusion in JSON
-func escapeJSONString(s string) string {
-	// Use strings.Builder for efficient string concatenation
-	var b strings.Builder
-	b.WriteString(`"`)
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteString(`"`)
-	return b.String()
 }
 
 func generateBrunoCollectionWithPrefix(gen *protogen.Plugin, file *protogen.File, prefix string) error {
