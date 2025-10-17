@@ -272,16 +272,16 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 		brunoConfig.P(`  "type": "collection"`)
 	}
 
-	// Add gRPC config if needed
+	// Add protobuf config if needed (for gRPC support)
 	if mode == modeAll || mode == modeGRPC {
 		if hasScripts {
-			brunoConfig.P(`  "grpc": {`)
+			brunoConfig.P(`  "protobuf": {`)
 			brunoConfig.P(`    "proto": {`)
 			brunoConfig.P(`      "root": "`, protoRoot, `"`)
 			brunoConfig.P(`    }`)
 			brunoConfig.P(`  },`)
 		} else {
-			brunoConfig.P(`  "grpc": {`)
+			brunoConfig.P(`  "protobuf": {`)
 			brunoConfig.P(`    "proto": {`)
 			brunoConfig.P(`      "root": "`, protoRoot, `"`)
 			brunoConfig.P(`    }`)
