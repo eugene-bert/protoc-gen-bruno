@@ -289,7 +289,10 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 
 		if preRequestScript != "" {
 			collectionBru.P("script:pre-request {")
-			collectionBru.P(preRequestScript)
+			// Indent each line of the script with 2 spaces
+			for _, line := range strings.Split(preRequestScript, "\n") {
+				collectionBru.P("  " + line)
+			}
 			collectionBru.P("}")
 			if postRequestScript != "" {
 				collectionBru.P("")
@@ -298,7 +301,10 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 
 		if postRequestScript != "" {
 			collectionBru.P("script:post-response {")
-			collectionBru.P(postRequestScript)
+			// Indent each line of the script with 2 spaces
+			for _, line := range strings.Split(postRequestScript, "\n") {
+				collectionBru.P("  " + line)
+			}
 			collectionBru.P("}")
 		}
 	}
