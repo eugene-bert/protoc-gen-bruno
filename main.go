@@ -22,7 +22,8 @@ const (
 )
 
 var (
-	mode = modeAll
+	mode             = modeAll
+	collectionAuthMode = ""
 )
 
 type environmentConfig struct {
@@ -42,6 +43,8 @@ func main() {
 	var protoRootFlag string
 	var preRequestScriptPath string
 	var postRequestScriptPath string
+	var authMode string
+	var authTokenVar string
 
 	flags.StringVar(&modeFlag, "mode", "all", "Generation mode: all, http, or grpc")
 	flags.StringVar(&singleCollectionFlag, "single_collection", "true", "Generate a single collection for all modules")
@@ -57,6 +60,8 @@ func main() {
 	flags.StringVar(&protoRootFlag, "proto_root", "../../proto", "Path to proto files root directory relative to bruno/collections (e.g., ../../api/proto/src)")
 	flags.StringVar(&preRequestScriptPath, "pre_request_script", "", "Path to JavaScript file containing collection-level pre-request script")
 	flags.StringVar(&postRequestScriptPath, "post_request_script", "", "Path to JavaScript file containing collection-level post-request script")
+	flags.StringVar(&authMode, "auth_mode", "", "Authentication mode for collection: bearer, basic, apikey, or awsv4 (optional)")
+	flags.StringVar(&authTokenVar, "auth_token_var", "bearer_token", "Collection variable name to use for bearer token (default: bearer_token)")
 
 	protogen.Options{
 		ParamFunc: flags.Set,
@@ -70,6 +75,9 @@ func main() {
 		default:
 			mode = modeAll
 		}
+
+		// Store auth mode globally for request generation
+		collectionAuthMode = authMode
 
 		singleCollection := singleCollectionFlag != "false"
 
@@ -157,7 +165,7 @@ func main() {
 
 			// Generate config once per collection
 			if len(f.Services) > 0 && !configGenerated[collectionPrefix] {
-				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments, protoRootFlag, preRequestScriptPath, postRequestScriptPath)
+				generateCollectionConfigWithPrefix(gen, protoFiles, collectionPrefix, collectionNameFlag, environments, protoRootFlag, preRequestScriptPath, postRequestScriptPath, authMode, authTokenVar)
 				configGenerated[collectionPrefix] = true
 			}
 
@@ -194,11 +202,11 @@ func urlToGrpcHost(httpURL string) string {
 	return url
 }
 
-func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string, preRequestScriptPath string, postRequestScriptPath string) {
-	generateCollectionConfig(gen, protoFiles, prefix, customName, environments, protoRoot, preRequestScriptPath, postRequestScriptPath)
+func generateCollectionConfigWithPrefix(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string, preRequestScriptPath string, postRequestScriptPath string, authMode string, authTokenVar string) {
+	generateCollectionConfig(gen, protoFiles, prefix, customName, environments, protoRoot, preRequestScriptPath, postRequestScriptPath, authMode, authTokenVar)
 }
 
-func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string, preRequestScriptPath string, postRequestScriptPath string) {
+func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File, prefix string, customName string, environments []environmentConfig, protoRoot string, preRequestScriptPath string, postRequestScriptPath string, authMode string, authTokenVar string) {
 	// Use custom name if provided, otherwise auto-generate
 	collectionName := "API Collection"
 
@@ -283,9 +291,48 @@ func generateCollectionConfig(gen *protogen.Plugin, protoFiles []*protogen.File,
 
 	brunoConfig.P("}")
 
-	// Generate collection.bru file if scripts are provided
-	if hasScripts {
+	// Generate collection.bru file if scripts or auth are provided
+	if hasScripts || authMode != "" {
 		collectionBru := gen.NewGeneratedFile(prefix+"collection.bru", "")
+
+		// Add auth configuration if specified
+		if authMode != "" {
+			collectionBru.P("auth {")
+			collectionBru.P("  mode: ", authMode)
+			collectionBru.P("}")
+			collectionBru.P("")
+
+			// Add auth-specific configuration based on mode
+			switch authMode {
+			case "bearer":
+				collectionBru.P("auth:bearer {")
+				collectionBru.P("  token: {{", authTokenVar, "}}")
+				collectionBru.P("}")
+			case "basic":
+				collectionBru.P("auth:basic {")
+				collectionBru.P("  username: {{username}}")
+				collectionBru.P("  password: {{password}}")
+				collectionBru.P("}")
+			case "apikey":
+				collectionBru.P("auth:apikey {")
+				collectionBru.P("  key: {{api_key}}")
+				collectionBru.P("  value: {{api_key_value}}")
+				collectionBru.P("  placement: header")
+				collectionBru.P("}")
+			case "awsv4":
+				collectionBru.P("auth:awsv4 {")
+				collectionBru.P("  accessKeyId: {{aws_access_key_id}}")
+				collectionBru.P("  secretAccessKey: {{aws_secret_access_key}}")
+				collectionBru.P("  sessionToken: {{aws_session_token}}")
+				collectionBru.P("  service: {{aws_service}}")
+				collectionBru.P("  region: {{aws_region}}")
+				collectionBru.P("}")
+			}
+
+			if hasScripts {
+				collectionBru.P("")
+			}
+		}
 
 		if preRequestScript != "" {
 			collectionBru.P("script:pre-request {")
@@ -406,6 +453,11 @@ func generateBrunoRequest(gen *protogen.Plugin, service *protogen.Service, metho
 	g.P("")
 	g.P(httpMethod, " {")
 	g.P("  url: {{base_url}}", path)
+	g.P("  body: none")
+	// Add auth inheritance if collection has auth configured
+	if collectionAuthMode != "" {
+		g.P("  auth: inherit")
+	}
 	g.P("}")
 
 	// Determine which fields should be query params vs body
@@ -553,6 +605,10 @@ func generateGrpcRequest(gen *protogen.Plugin, service *protogen.Service, method
 	g.P("grpc {")
 	g.P("  url: {{grpc_url}}")
 	g.P("  method: ", grpcMethod)
+	// Add auth inheritance if collection has auth configured
+	if collectionAuthMode != "" {
+		g.P("  auth: inherit")
+	}
 	g.P("}")
 	g.P("")
 	g.P("metadata {")

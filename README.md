@@ -223,15 +223,18 @@ plugins:
 
 **Example pre-request script (`scripts/bruno/auth.js`):**
 ```javascript
+const axios = require("axios");
+
 // Fetch bearer token from auth server
-const res = await req({
-  url: bru.getEnvVar("auth_server_url") || "http://localhost:1234",
+const response = await axios(bru.getEnvVar("auth_server_url") || "http://localhost:1234", {
   method: "GET"
 });
 
+const data = response.data;
+
 // Set the bearer token for all requests
-if (res && res.body && res.body.token) {
-  bru.setVar("bearer_token", res.body.token);
+if (data && data.token) {
+  bru.setVar("bearer_token", data.token);
 }
 ```
 
