@@ -11,6 +11,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/pluginpb"
+
+	openapiv2 "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 )
 
 type generationMode string
@@ -672,7 +674,10 @@ func generateFieldValue(field *protogen.Field, indent int) string {
 
 	switch kind {
 	case protoreflect.StringKind:
-		// Use field name as example value
+		if example := getOpenAPIExample(field); example != "" {
+			return example
+		}
+
 		return fmt.Sprintf(`"example_%s"`, field.Desc.JSONName())
 	case protoreflect.Int32Kind, protoreflect.Int64Kind,
 		protoreflect.Uint32Kind, protoreflect.Uint64Kind,
@@ -724,4 +729,28 @@ func generateFieldValue(field *protogen.Field, indent int) string {
 	default:
 		return `"unknown"`
 	}
+}
+
+// getOpenAPIExample extracts the example value from openapiv2 field options.
+// Returns the raw example string (already JSON-quoted in the proto) or empty string.
+func getOpenAPIExample(field *protogen.Field) string {
+	opts := field.Desc.Options()
+	if opts == nil {
+		return ""
+	}
+
+	if !proto.HasExtension(opts, openapiv2.E_Openapiv2Field) {
+		return ""
+	}
+
+	fieldOpts := proto.GetExtension(opts, openapiv2.E_Openapiv2Field).(*openapiv2.JSONSchema)
+	if fieldOpts == nil {
+		return ""
+	}
+
+	if fieldOpts.Example != "" {
+		return fieldOpts.Example
+	}
+
+	return ""
 }
