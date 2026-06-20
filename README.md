@@ -18,6 +18,14 @@ Generate Bruno API collections from Protocol Buffer definitions with gRPC-Gatewa
 ## Installation
 
 ```bash
+go install github.com/eugene-bert/protoc-gen-bruno@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/eugene-bert/protoc-gen-bruno.git
+cd protoc-gen-bruno
 go build -o protoc-gen-bruno .
 ```
 
@@ -30,7 +38,7 @@ go build -o protoc-gen-bruno .
 ```yaml
 version: v2
 plugins:
-  - local: ./protoc-gen-bruno
+  - local: protoc-gen-bruno
     out: bruno/collections
 ```
 

@@ -1,6 +1,6 @@
 module github.com/eugene-bert/protoc-gen-bruno
 
-go 1.25.1
+go 1.26
 
 require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478
