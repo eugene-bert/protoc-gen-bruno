@@ -1,5 +1,10 @@
 # protoc-gen-bruno
 
+[![CI](https://github.com/eugene-bert/protoc-gen-bruno/actions/workflows/ci.yml/badge.svg)](https://github.com/eugene-bert/protoc-gen-bruno/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/eugene-bert/protoc-gen-bruno)](https://goreportcard.com/report/github.com/eugene-bert/protoc-gen-bruno)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Generate Bruno API collections from Protocol Buffer definitions with gRPC-Gateway annotations.
 
 ## Features
